@@ -58,7 +58,13 @@ policy layer, later layers cannot re-enable it.
 **Statement:** Shorthand entries like `group:memory` expand to exactly the set
 of tools documented in `multi-agent-sandbox-tools.md`.
 
-**Status:** TODO (encode and model-check)
+**TLA+ invariant:** `Inv_GroupMemoryExact` in `tla/specs/ToolGroupExpansion.tla`
+
+**Scenarios:**
+- `tla/models/group_memory_ok.cfg`
+
+**Negative test (should FAIL):**
+- `tla/models/group_memory_bad_missing.cfg`
 
 ---
 
