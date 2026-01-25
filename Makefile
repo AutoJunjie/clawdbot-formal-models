@@ -1,7 +1,7 @@
 TLC=./bin/tlc
 MODEL?=tla/models/basic.cfg
 
-.PHONY: tlc precedence
+.PHONY: tlc precedence precedence-negative
 
 # Run TLC with a pinned, in-repo model config
 
@@ -11,3 +11,7 @@ tlc:
 # Prove monotonic "deny wins" for tool policy precedence
 precedence:
 	$(TLC) -workers auto -config tla/models/precedence_min.cfg tla/specs/ToolPolicyPrecedence.tla
+
+# Negative test: demonstrate TLC catches a precedence bug where allow overrides deny
+precedence-negative:
+	$(TLC) -workers auto -config tla/models/precedence_negative_bad_allow_overrides.cfg tla/specs/ToolPolicyPrecedence_BadAllowOverrides.tla

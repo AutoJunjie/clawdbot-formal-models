@@ -48,6 +48,9 @@ policy layer, later layers cannot re-enable it.
 **Scenarios:**
 - `tla/models/precedence_min.cfg`
 
+**Negative test (should FAIL):**
+- `tla/models/precedence_negative_bad_allow_overrides.cfg` with `tla/specs/ToolPolicyPrecedence_BadAllowOverrides.tla`
+
 ---
 
 ### C4 — Tool groups expand to the documented tool sets
