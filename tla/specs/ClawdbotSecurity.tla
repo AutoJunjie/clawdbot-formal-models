@@ -2,62 +2,86 @@
 EXTENDS Naturals, Sequences, FiniteSets
 
 (******************************************************************************
-* Goal
-*   Model Clawdbot's security-relevant control plane at a high level:
-*     - sessions (main vs group/shared)
-*     - providers (discord, slack, etc.)
-*     - tools with capabilities (send-message, read-memory, elevated-exec, ...)
-*     - explicit "ask-first" approval gates for risky actions
+* ClawdbotSecurity.tla
 *
-* This is intentionally abstract: we model permissions and information flow,
-* not the internal implementation details.
+* Purpose
+*   A high-level, *reproducible* model of Clawdbot's security control plane.
+*
+* We model:
+*   - sessions (main vs shared)
+*   - tools (memory reads, external side effects, elevated execution)
+*   - approval gates for risky actions
+*
+* We do NOT model implementation details; we model permissions + information flow.
+*
+* This spec is designed to be instantiated by a TLC config (.cfg) with small,
+* finite sets so we can model-check invariants.
 ******************************************************************************)
 
 CONSTANTS
-  Users,            \* principals (humans)
-  Sessions,         \* session identifiers
-  Providers,        \* e.g. "discord", "signal"
-  Tools,            \* e.g. "message.send", "exec", "memory_get", ...
-  Policy            \* [SessionTypes -> [Tools -> BOOLEAN]]
+  Users, Sessions, Providers, Tools,
 
-ASSUME Users /= {} /\ Sessions /= {} /\ Providers /= {} /\ Tools /= {}
+  \* Distinguished sessions for the small TLC model
+  MainSession, SharedSession,
 
-\* SessionType: main = direct chat with owner, shared = group/public context
+  \* Tool categories (subsets of Tools)
+  MemTools,        \* reading agent memory / private context
+  ExternalTools,   \* sends messages / changes config / browser actions
+  ElevatedTools    \* running commands with elevated privileges
+
 SessionTypes == {"main", "shared"}
 
 VARIABLES
-  owner,            \* the owner user for this agent instance
-  sessionType,      \* Sessions -> SessionTypes
-  sessionProvider,  \* Sessions -> Providers
-  pendingApproval,  \* SUBSET Sessions (sessions awaiting explicit approval)
-  lastAction        \* trace/debug: [s \in Sessions |-> [tool: Tools \cup {"none"}]]
+  owner,           \* the "owner" principal
+  sessionType,     \* Sessions -> SessionTypes
+  sessionProvider, \* Sessions -> Providers
+
+  \* approval gate: sessions currently awaiting explicit approval
+  pendingApproval, \* SUBSET Sessions
+
+  \* audit/trace (for TLC counterexamples)
+  lastAction       \* [s \in Sessions |-> [tool: Tools \cup {"none"}]]
 
 vars == << owner, sessionType, sessionProvider, pendingApproval, lastAction >>
 
 (******************************************************************************
+* Sanity assumptions about constants
+******************************************************************************)
+ASSUME
+  /\ Users /= {} /\ Sessions /= {} /\ Providers /= {} /\ Tools /= {}
+  /\ MainSession \in Sessions
+  /\ SharedSession \in Sessions
+  /\ MainSession /= SharedSession
+  /\ MemTools \subseteq Tools
+  /\ ExternalTools \subseteq Tools
+  /\ ElevatedTools \subseteq Tools
+
+(******************************************************************************
 * Helper predicates
 ******************************************************************************)
-
 IsMain(s) == sessionType[s] = "main"
 IsShared(s) == sessionType[s] = "shared"
 
-ToolEnabled(st, t) == Policy[st][t]
+NeedsApproval(t) == t \in ExternalTools \/ t \in ElevatedTools
 
-\* Security policy sketch (to refine):
-\* - In shared contexts, never allow reading long-term memory.
-\* - In shared contexts, external side-effects require explicit approval.
-\* - In main, more permissive, but still gate elevated operations.
-\* NOTE: these are *intent* invariants; the actual policy is in Policy.
+\* Policy: which tools are allowed to run (ignoring the approval gate)
+AllowedByPolicy(s, t) ==
+  IF IsShared(s) THEN
+    \* shared contexts must never access memory tools;
+    \* risky actions can be allowed but must be approved
+    t \notin MemTools
+  ELSE
+    \* main context can use all tools; approval still required for risky ones
+    TRUE
 
-\* Partition Tools into categories (keep abstract; instantiate in model)
-MemTools == { t \in Tools : t = "memory_get" \/ t = "memory_search" }
-ExternalSideEffectTools == { t \in Tools : t = "message.send" \/ t = "gateway.config.apply" \/ t = "gateway.update.run" \/ t = "browser.act" }
-ElevatedTools == { t \in Tools : t = "exec.elevated" }
+\* Full permission check, including approval gate
+MayRun(s, t) ==
+  /\ AllowedByPolicy(s, t)
+  /\ IF NeedsApproval(t) THEN s \notin pendingApproval ELSE TRUE
 
 (******************************************************************************
 * Init
 ******************************************************************************)
-
 Init ==
   /\ owner \in Users
   /\ sessionType \in [Sessions -> SessionTypes]
@@ -69,24 +93,18 @@ Init ==
 (******************************************************************************
 * Actions
 ******************************************************************************)
-
-\* Attempt to run a tool in session s.
 RunTool(s, t) ==
-  /\ s \in Sessions /\ t \in Tools
-  /\ ToolEnabled(sessionType[s], t)
-  /\ IF t \in ExternalSideEffectTools \/ t \in ElevatedTools
-        THEN s \notin pendingApproval
-        ELSE TRUE
+  /\ s \in Sessions
+  /\ t \in Tools
+  /\ MayRun(s, t)
   /\ lastAction' = [lastAction EXCEPT ![s].tool = t]
   /\ UNCHANGED << owner, sessionType, sessionProvider, pendingApproval >>
 
-\* Request approval for a risky action in session s.
 RequestApproval(s) ==
   /\ s \in Sessions
   /\ pendingApproval' = pendingApproval \cup {s}
   /\ UNCHANGED << owner, sessionType, sessionProvider, lastAction >>
 
-\* Grant approval in session s (models the human explicitly approving).
 GrantApproval(s) ==
   /\ s \in pendingApproval
   /\ pendingApproval' = pendingApproval \ {s}
@@ -97,26 +115,23 @@ Next ==
   \/ (\E s \in Sessions: RequestApproval(s))
   \/ (\E s \in Sessions: GrantApproval(s))
 
+Spec == Init /\ [][Next]_vars
+
 (******************************************************************************
 * Safety properties (invariants)
 ******************************************************************************)
 
-\* In shared contexts, memory tools must be disabled.
-Inv_NoMemoryInShared ==
-  \A t \in MemTools: ~ToolEnabled("shared", t)
+\* Core non-leakage rule: in shared contexts, memory tools are never runnable: 
+Inv_NoMemoryToolInShared ==
+  \A t \in MemTools: \A s \in Sessions:
+    IsShared(s) => ~MayRun(s, t)
 
-\* In shared contexts, side-effect tools must either be disabled or require approval.
-\* (This formulation says: if enabled, the model must go through pendingApproval gate.)
-Inv_SideEffectsGatedInShared ==
-  \A t \in ExternalSideEffectTools:
-    ToolEnabled("shared", t) => TRUE
+\* If a tool needs approval, it cannot be run while approval is pending.
+Inv_ApprovalGate ==
+  \A s \in Sessions:
+    s \in pendingApproval => (\A t \in Tools: NeedsApproval(t) => ~MayRun(s, t))
 
-\* Elevated tools are never runnable without approval (modeled by pendingApproval).
-Inv_ElevatedAlwaysGated ==
-  TRUE
-
-Spec == Init /\ [][Next]_vars
-
-THEOREM Spec => []Inv_NoMemoryInShared
+THEOREM Spec => []Inv_NoMemoryToolInShared
+THEOREM Spec => []Inv_ApprovalGate
 
 =============================================================================

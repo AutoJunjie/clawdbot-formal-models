@@ -4,7 +4,6 @@
 # TLC
 states/
 *.st
-*.cfg
 *.out
 *.dot
 *.png

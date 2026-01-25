@@ -1,8 +1,9 @@
 TLC=./bin/tlc
+MODEL?=tla/models/basic.cfg
 
 .PHONY: tlc
 
-# Run the base spec (no TLC config yet)
+# Run TLC with a pinned, in-repo model config
 
 tlc:
-	$(TLC) -workers auto -deadlock -config tla/models/default.cfg tla/specs/ClawdbotSecurity.tla
+	$(TLC) -workers auto -deadlock -config $(MODEL) tla/specs/ClawdbotSecurity.tla
