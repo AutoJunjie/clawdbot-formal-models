@@ -1,7 +1,7 @@
 TLC=./bin/tlc
 MODEL?=tla/models/basic.cfg
 
-.PHONY: tlc precedence precedence-negative groups groups-negative elevated elevated-negative nodes-policy nodes-policy-negative attacker attacker-negative attacker-nodes-negative attacker-nodes-allowlist attacker-nodes-allowlist-negative approvals approvals-negative approvals-token approvals-token-negative nodes-pipeline nodes-pipeline-negative gateway-exposure gateway-exposure-negative gateway-exposure-v2 gateway-exposure-v2-negative
+.PHONY: tlc precedence precedence-negative groups groups-negative elevated elevated-negative nodes-policy nodes-policy-negative attacker attacker-negative attacker-nodes-negative attacker-nodes-allowlist attacker-nodes-allowlist-negative approvals approvals-negative approvals-token approvals-token-negative nodes-pipeline nodes-pipeline-negative gateway-exposure gateway-exposure-negative gateway-exposure-v2 gateway-exposure-v2-negative gateway-exposure-v2-protected gateway-exposure-v2-protected-negative
 
 # Run TLC with a pinned, in-repo model config
 
@@ -94,3 +94,12 @@ gateway-exposure-v2:
 
 gateway-exposure-v2-negative:
 	$(TLC) -workers auto -deadlock -config tla/models/gateway_exposure_v2_unsafe_lan_noauth.cfg tla/specs/GatewayExposureHarnessV2.tla
+
+# Protected: non-loopback with token/password configured blocks unauth attacker
+
+gateway-exposure-v2-protected:
+	$(TLC) -workers auto -deadlock -config tla/models/gateway_exposure_v2_protected_lan_token_no_creds.cfg tla/specs/GatewayExposureHarnessV2.tla
+
+# Credentialed attacker can still connect (expected reachability)
+gateway-exposure-v2-protected-negative:
+	$(TLC) -workers auto -deadlock -config tla/models/gateway_exposure_v2_protected_lan_token_with_creds.cfg tla/specs/GatewayExposureHarnessV2.tla
