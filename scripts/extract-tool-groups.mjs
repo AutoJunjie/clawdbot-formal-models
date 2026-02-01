@@ -41,7 +41,7 @@ function evalObjectLiteral(src) {
 }
 
 const groups = evalObjectLiteral(groupsSrc);
-const aliases = evalObjectLiteral(aliasesSrc);
+const toolNameAliases = evalObjectLiteral(aliasesSrc);
 
 // Back-compat: project rename(s).
 // Historically: `group:clawdbot`.
@@ -50,16 +50,16 @@ const aliases = evalObjectLiteral(aliasesSrc);
 // Keep all present aliases identical to avoid churn in downstream specs/tests
 // and in cross-repo conformance checks.
 
-const aliases = ['group:clawdbot', 'group:openclaw', 'group:moltbot'];
+const groupAliases = ['group:clawdbot', 'group:openclaw', 'group:moltbot'];
 
 // Find the first defined alias as the canonical source.
-const firstKey = aliases.find((k) => groups[k]);
+const firstKey = groupAliases.find((k) => groups[k]);
 if (firstKey) {
-  for (const k of aliases) {
+  for (const k of groupAliases) {
     if (!groups[k]) groups[k] = groups[firstKey];
   }
 }
 
 fs.mkdirSync(path.dirname(out), { recursive: true });
-fs.writeFileSync(out, JSON.stringify({ groups, aliases }, null, 2));
+fs.writeFileSync(out, JSON.stringify({ groups, aliases: toolNameAliases }, null, 2));
 console.log(`Wrote ${out}`);
